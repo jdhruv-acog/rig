@@ -7,7 +7,7 @@
  *
  * This file only reads. It never installs and never asks.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
 export type Os = "macos" | "linux";
@@ -22,7 +22,13 @@ export interface Platform {
   wsl: boolean;
   /** A container. There is no shell profile to write and usually no browser. */
   container: boolean;
-  /** A person can answer a question. With no terminal, `rig` must never wait. */
+  /**
+   * A person can answer a question.
+   *
+   * True when a terminal is reachable, **even if stdin is not one**. The headline way to
+   * run this tool is `curl … | sh`, which makes stdin the pipe from curl while a person
+   * sits at a perfectly good terminal. Testing stdin alone refuses to ask them anything.
+   */
   interactive: boolean;
   /** Root already, or a `sudo` that works without asking again. */
   privileged: boolean;
@@ -88,6 +94,26 @@ function isPrivileged(): boolean {
   }
 }
 
+/**
+ * Is there a terminal to ask on?
+ *
+ * `curl … | sh` leaves stdin as the pipe, so a question read from stdin gets the rest of
+ * the script instead of an answer — or nothing at all. The terminal itself is still there,
+ * and `/dev/tty` is how a process reaches it whatever its stdin is. That is what `ssh`,
+ * `sudo` and `git` all do for the same reason.
+ *
+ * With no controlling terminal — CI, an image build, an agent — opening it fails, and
+ * `rig` then knows not to wait for an answer that cannot arrive.
+ */
+export function canAsk(): boolean {
+  try {
+    closeSync(openSync("/dev/tty", "r"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function detect(env: NodeJS.ProcessEnv = process.env): Platform {
   const os: Os = process.platform === "darwin" ? "macos" : "linux";
   const container = os === "linux" && inContainer();
@@ -99,8 +125,7 @@ export function detect(env: NodeJS.ProcessEnv = process.env): Platform {
     release: process.platform === "darwin" ? macRelease() : kernelRelease(),
     wsl,
     container,
-    // Both streams, because a question needs somewhere to print and somewhere to read.
-    interactive: process.stdin.isTTY === true && process.stderr.isTTY === true,
+    interactive: canAsk(),
     privileged: isPrivileged(),
     // WSL reaches the Windows browser through interop. A container reaches none.
     browser: os === "macos" || wsl || (!container && Boolean(env["DISPLAY"] ?? env["WAYLAND_DISPLAY"])),

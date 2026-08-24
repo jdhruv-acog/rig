@@ -10,6 +10,7 @@
  * **Never ask twice.** A person who answered `never` to a privileged step is not asked
  * again on any later run. The answer lives in the state file, and one flag reverses it.
  */
+import { execFileSync } from "node:child_process";
 import { EXIT, note, style } from "./output.ts";
 import type { State } from "./state.ts";
 import type { Platform } from "./platform.ts";
@@ -100,75 +101,73 @@ export class Missing extends Error {
     readonly label: string,
     readonly variable?: string,
   ) {
-    super(
-      variable
-        ? `${label} is needed, and there is no terminal to ask on. Set ${variable} instead.`
-        : `${label} is needed, and there is no terminal to ask on.`,
-    );
+    // Two ways out, because the common cause is `curl … | sh` on a real terminal. Running
+    // rig directly always has one, and needs no password in an environment variable —
+    // where it would also land in shell history.
+    const ways = [
+      `${label} is needed, and rig could not reach a terminal to ask on.`,
+      ``,
+      `  Run rig directly, which always has one:`,
+      `    rig setup <deployment-url>`,
+      ``,
+      ...(variable ? [`  Or set ${variable} and re-run.`] : []),
+    ];
+    super(ways.join("\n"));
     this.name = "Missing";
   }
 }
 
-/** Read one line from the terminal. The prompt goes to stderr, with every other prompt. */
-function readLine(prompt: string): Promise<string> {
-  process.stderr.write(prompt);
-  return new Promise((resolve) => {
-    const onData = (chunk: Buffer): void => {
-      process.stdin.off("data", onData);
-      process.stdin.pause();
-      resolve(chunk.toString("utf8").replace(/\r?\n$/, ""));
-    };
-    process.stdin.resume();
-    process.stdin.on("data", onData);
-  });
-}
 
 /**
- * Read a password without showing it.
+ * Read one line from the terminal.
  *
- * Raw mode stops the terminal from echoing each character. The handler restores the
- * terminal on every path, including the interrupt, because a shell left in raw mode after
- * a cancelled install shows nothing the person types, in any command, until they reset it.
+ * From `/dev/tty`, never from stdin. `curl … | sh` leaves stdin as the pipe carrying the
+ * script, so a question read from it gets script text or nothing at all while a person
+ * sits at a working terminal. `/dev/tty` is the terminal whatever stdin happens to be —
+ * the same thing `ssh`, `sudo` and `git` do, for the same reason.
+ *
+ * The read is done by `sh` rather than by this process. Reading a tty file descriptor
+ * directly depends on how the runtime handles it, and one returned an empty string every
+ * time while the person's typed answer sat unread.
+ *
+ * @param hide  turn the terminal's echo off, for a password.
  */
+function readFromTerminal(hide: boolean): string {
+  const read = 'IFS= read -r __rig_line < /dev/tty && printf %s "$__rig_line"';
+  const script = hide
+    ? `stty -echo < /dev/tty 2>/dev/null; ${read}; __rig_status=$?; stty echo < /dev/tty 2>/dev/null; exit $__rig_status`
+    : read;
+  try {
+    return execFileSync("/bin/sh", ["-c", script], {
+      encoding: "utf8",
+      stdio: ["inherit", "pipe", "inherit"],
+    });
+  } catch {
+    // End of input, or no terminal after all. An empty answer is refused by the caller,
+    // which names what to set instead.
+    return "";
+  } finally {
+    // Always, on every path. A terminal left with the echo off shows nothing a person
+    // types, in every later command, until they run `stty sane`.
+    if (hide) {
+      try {
+        execFileSync("/bin/sh", ["-c", "stty echo < /dev/tty 2>/dev/null"], { stdio: "ignore" });
+      } catch {
+        // Nothing to restore.
+      }
+      process.stderr.write("\n");
+    }
+  }
+}
+
+function readLine(prompt: string): Promise<string> {
+  process.stderr.write(prompt);
+  return Promise.resolve(readFromTerminal(false));
+}
+
 function readSecret(prompt: string): Promise<string> {
   process.stderr.write(prompt);
-  const stdin = process.stdin;
-  const wasRaw = stdin.isRaw === true;
-
-  return new Promise((resolve, reject) => {
-    let value = "";
-    const restore = (): void => {
-      stdin.off("data", onData);
-      if (stdin.setRawMode) stdin.setRawMode(wasRaw);
-      stdin.pause();
-      process.stderr.write("\n");
-    };
-
-    const onData = (chunk: Buffer): void => {
-      for (const byte of chunk) {
-        if (byte === 0x03) {
-          // Ctrl-C. Restore the terminal first, then leave.
-          restore();
-          reject(new Error("cancelled"));
-          return;
-        }
-        if (byte === 0x0d || byte === 0x0a) {
-          restore();
-          resolve(value);
-          return;
-        }
-        if (byte === 0x7f || byte === 0x08) {
-          value = value.slice(0, -1);
-          continue;
-        }
-        value += String.fromCharCode(byte);
-      }
-    };
-
-    if (stdin.setRawMode) stdin.setRawMode(true);
-    stdin.resume();
-    stdin.on("data", onData);
-  });
+  return Promise.resolve(readFromTerminal(true));
 }
 
 /** Shown under a step that a person declined, so the consequence is never a surprise. */
