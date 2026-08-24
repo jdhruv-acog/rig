@@ -1,0 +1,67 @@
+# A site file. This one is an example, and every host in it is a reserved example domain.
+#
+# A site is where you work: its registries, its products, and its deployments. `rig` knows
+# how to write an npmrc and how to run `docker login`. This file says which host, and which
+# credential to ask for. So `rig` itself names no company and no internal address.
+#
+# Keep your real site file private, and serve it from an address your people can reach.
+#
+#   rig init --site https://go.example.com/site.yaml
+
+version: 1
+id: example
+
+# One credential, used for every registry below.
+#
+#   prompt  ask a person, with the echo off. The value is never stored by rig.
+#   env     read RIG_USERNAME and RIG_PASSWORD. This is the path for CI and images.
+#
+# `prompt` falls back to `env` on its own when there is no terminal, so one site file
+# serves both a laptop and a build.
+credential:
+  kind: prompt
+  label: Example LDAP
+
+# The runtimes every machine here must have. rig hands this list to mise.
+tools:
+  uv: latest
+  python: "3.14"
+  node: lts
+
+capabilities:
+  # Writes the scope line and the auth line into ~/.npmrc, 0600.
+  - id: npm
+    kind: npm-registry
+    host: npm.example.com
+    scope: "@example"
+    verify: https://npm.example.com/-/whoami
+
+  # Writes one `machine` entry into ~/.netrc, 0600.
+  - id: pypi
+    kind: netrc
+    host: pypi.example.com
+    verify: https://pypi.example.com/simple/
+
+  # Runs `docker login`. Skipped, never failed, when there is no container runtime.
+  - id: containers
+    kind: docker-registry
+    host: registry.example.com:4443
+
+  # Makes sure an SSH key exists and is registered with GitHub. `ssh-keygen` is on every
+  # machine already. Registering uses `gh` when it is there, and otherwise prints the key
+  # and the address to paste it at.
+  - id: source
+    kind: github-ssh
+    org: example
+
+# What a person can install. rig imports no product code — it reads a descriptor.
+products:
+  - id: hello
+    from: https://go.example.com/hello.product.yaml
+
+# Named deployments, so nobody is sent a URL to type. `rig install` offers this list.
+deployments:
+  - name: dev
+    identity: https://identity.dev.example.com
+  - name: production
+    identity: https://identity.example.com

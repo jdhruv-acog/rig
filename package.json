@@ -1,0 +1,24 @@
+{
+  "name": "rig",
+  "version": "0.1.0",
+  "description": "Make a machine ready — tools, private registry access, and products",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "rig": "src/index.ts" },
+  "files": ["src", "examples", "docs", "install.sh", "README.md"],
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "test": "bun test",
+    "typecheck": "bun x tsc --noEmit",
+    "check:clean": "bash scripts/check-clean.sh"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  },
+  "engines": { "bun": ">=1.2.0" }
+}
