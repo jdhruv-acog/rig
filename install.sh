@@ -145,7 +145,10 @@ if [ -n "$rc" ]; then
   fi
   {
     printf '%s\n' "$begin"
-    printf 'export PATH="%s:%s:$PATH"\n' "$BIN_DIR" "$bun_dir"
+    # mise keeps what it installs behind shims. Without this directory, the Python and uv
+    # rig installed are invisible, and anything asking for `python3` gets whatever the
+    # system has — on macOS a stub that needs Xcode.
+    printf 'export PATH="%s:%s:$HOME/.local/share/mise/shims:$PATH"\n' "$BIN_DIR" "$bun_dir"
     printf '%s\n' "$end"
   } >> "$tmp_rc"
   # Replace in one step, so an interrupted write never truncates somebody's shell file.

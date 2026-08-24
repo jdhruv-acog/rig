@@ -15,7 +15,7 @@
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import type { Needs } from "./deployment.ts";
 import { readSetup } from "./deployment.ts";
@@ -216,6 +216,50 @@ const git: Step = {
 };
 
 /**
+ * `gh`, the GitHub command line.
+ *
+ * Installed from a plain download, so it needs no Homebrew and no administrator password —
+ * which matters, because on macOS Homebrew needs the Xcode Command Line Tools and those
+ * need one.
+ *
+ * It is here for one reason: registering an SSH key with GitHub is otherwise a public key
+ * copied by hand into a browser, and `gh ssh-key add` is one command.
+ */
+const gh: Step = {
+  id: "gh",
+  requires: [],
+  group: "base",
+  check: async (): Promise<Verdict> =>
+    has("gh") ? { state: "ok", detail: version("gh").replace(/^gh version /, "") } : { state: "missing", detail: "not installed" },
+  apply: async (ctx) => {
+    const platform = ctx.platform.os === "macos" ? "macOS" : "linux";
+    const arch = ctx.platform.arch === "arm64" ? "arm64" : "amd64";
+    const release = JSON.parse(
+      execFileSync("curl", ["-fsSL", "https://api.github.com/repos/cli/cli/releases/latest"], {
+        encoding: "utf8",
+      }),
+    ) as { tag_name: string; assets: { name: string; browser_download_url: string }[] };
+
+    const wanted = release.assets.find(
+      (a) => a.name.includes(platform) && a.name.includes(arch) && /\.(zip|tar\.gz)$/.test(a.name),
+    );
+    if (!wanted) throw new Error(`GitHub publishes no gh build for ${platform} ${arch}.`);
+
+    // Unpacked in a temporary directory and moved in last, so an interrupted download
+    // never leaves something at BIN that later looks installed.
+    run("/bin/sh", [
+      "-c",
+      `set -e; tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT; ` +
+        `curl -fsSL "${wanted.browser_download_url}" -o "$tmp/gh.archive"; ` +
+        `cd "$tmp"; case "${wanted.name}" in *.zip) unzip -q gh.archive;; *) tar -xzf gh.archive;; esac; ` +
+        `found=$(find "$tmp" -type f -name gh -perm -u+x | head -1); ` +
+        `mkdir -p "${BIN}"; mv "$found" "${BIN}/gh"; chmod +x "${BIN}/gh"`,
+    ]);
+  },
+  remove: async () => run("/bin/sh", ["-c", `rm -f ${BIN}/gh`]),
+};
+
+/**
  * Can this machine fetch from GitHub over SSH? **Advisory.**
  *
  * A tool that fetches a private repository needs a key registered there, and the failure
@@ -227,35 +271,73 @@ const git: Step = {
  */
 const github: Step = {
   id: "github",
-  requires: ["git"],
+  requires: ["git", "gh"],
   group: "base",
   check: async (): Promise<Verdict> => {
     if (!has("ssh")) return { state: "skipped", detail: "no ssh on this machine" };
-    try {
-      // GitHub always exits non-zero here — it offers no shell — so the greeting in the
-      // output is the answer, not the exit code.
-      execFileSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-T", "git@github.com"], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
+    const who = githubUser();
+    return who
+      ? { state: "ok", detail: `SSH to GitHub works, as ${who}` }
+      : { state: "missing", detail: "no SSH key registered with GitHub" };
+  },
+  apply: async (ctx) => {
+    const answer = await ctx.ask.consent(
+      "github",
+      "Sign in to GitHub now?",
+      [
+        "Some tools fetch what they need from a private GitHub repository.",
+        "That needs an SSH key registered with your account.",
+        "",
+        "This opens a browser to sign in, then registers a key for this machine.",
+      ],
+    );
+    if (answer !== "yes") return;
+
+    // Interactive on purpose: `gh auth login` asks questions and opens a browser. Its
+    // output has to reach the person, so rig hands the terminal over and stops talking.
+    if (!ghAuthenticated()) {
+      const login = spawnSync("gh", ["auth", "login", "--git-protocol", "ssh", "--web"], {
+        stdio: "inherit",
       });
-      return { state: "ok", detail: "SSH to GitHub works" };
-    } catch (cause) {
-      const said = String((cause as { stderr?: string }).stderr ?? "");
-      const greeting = /Hi ([^!]+)!/.exec(said);
-      if (greeting) return { state: "ok", detail: `SSH to GitHub works, as ${greeting[1]}` };
-      return {
-        state: "note",
-        detail: "no SSH key registered with GitHub. A private pack cannot be fetched",
-        fix: [
-          "Make a key, and register it:",
-          "  ssh-keygen -t ed25519 -C \"$USER\" -f ~/.ssh/id_ed25519 -N \"\"",
-          "  cat ~/.ssh/id_ed25519.pub",
-          "then paste it at  https://github.com/settings/ssh/new",
-        ],
-      };
+      if (login.status !== 0) throw new Error("gh auth login did not finish.");
     }
+
+    const key = join(homedir(), ".ssh", "id_ed25519");
+    if (!existsSync(`${key}.pub`)) {
+      run("ssh-keygen", ["-t", "ed25519", "-f", key, "-N", "", "-q"]);
+    }
+    // Already registered is success, not a failure: a person who ran this before, or who
+    // added the key by hand, is finished.
+    spawnSync("gh", ["ssh-key", "add", `${key}.pub`, "--title", `rig-${hostname()}`], {
+      stdio: ["ignore", "ignore", "ignore"],
+    });
   },
 };
+
+/** Who GitHub says we are over SSH, or undefined when it does not know us. */
+function githubUser(): string | undefined {
+  try {
+    execFileSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-T", "git@github.com"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return "";
+  } catch (cause) {
+    // GitHub always exits non-zero here — it offers no shell — so the greeting is the
+    // answer and the exit code is not.
+    const said = String((cause as { stderr?: string }).stderr ?? "");
+    return /Hi ([^!]+)!/.exec(said)?.[1];
+  }
+}
+
+function ghAuthenticated(): boolean {
+  try {
+    execFileSync("gh", ["auth", "status"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export const BASE: Step[] = [
   bun,
@@ -264,6 +346,7 @@ export const BASE: Step[] = [
   tool("uv", "latest"),
   tool("python", "3.14"),
   git,
+  gh,
   github,
   container,
 ];
