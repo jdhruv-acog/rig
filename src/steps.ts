@@ -178,7 +178,44 @@ const container: Step = {
   },
 };
 
-export const BASE: Step[] = [bun, path, mise, tool("uv", "latest"), tool("python", "3.14"), container];
+/**
+ * `git`. **Advisory, and never installed here.**
+ *
+ * Some tools fetch what they need with it. On macOS it arrives with the Xcode Command Line
+ * Tools, which open Apple's installer and ask for an administrator password — something a
+ * managed laptop often cannot give, and something this tool will not ask for on a person's
+ * behalf. So it reports, and names what will not work without it.
+ */
+const git: Step = {
+  id: "git",
+  requires: [],
+  group: "base",
+  check: async (): Promise<Verdict> => {
+    if (!has("git")) {
+      return {
+        state: "note",
+        detail: "not installed. Any tool that fetches over git needs it",
+        fix: [
+          "On macOS:  xcode-select --install   (Apple's installer, needs a password)",
+          "On Debian or Ubuntu:  sudo apt-get install -y git",
+        ],
+      };
+    }
+    // On macOS `git` is a stub until the Command Line Tools are there. It exists on PATH
+    // and fails the moment it is used, which reads like a broken tool rather than a
+    // missing one.
+    const reported = version("git");
+    return reported
+      ? { state: "ok", detail: reported }
+      : {
+          state: "note",
+          detail: "on PATH but not usable — the Command Line Tools are not installed",
+          fix: ["xcode-select --install   (Apple's installer, needs a password)"],
+        };
+  },
+};
+
+export const BASE: Step[] = [bun, path, mise, tool("uv", "latest"), tool("python", "3.14"), git, container];
 
 // ── the deployment's clients ─────────────────────────────────────────────────
 

@@ -25,6 +25,16 @@ rig remove [deployment-url]   undo exactly what rig applied
 
 Every command accepts `--json`. Every command is safe to run again.
 
+## Starting over
+
+```sh
+curl -fsSL https://<host>/uninstall.sh | sh          # keeps your registry credential
+curl -fsSL https://<host>/uninstall.sh | sh -s -- --all   # removes that too
+```
+
+It removes what rig installed and the PATH block it wrote, and leaves every other line
+in your shell file exactly as it was.
+
 ## The one idea
 
 A machine has capabilities. A capability can be checked, applied, and removed.
