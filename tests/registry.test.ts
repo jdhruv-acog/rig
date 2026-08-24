@@ -97,8 +97,10 @@ describe("reach", () => {
     expect(await reach("https://npm.example.com/", "@example/a-cli", env, ok(200))).toBe("ok");
   });
 
-  test("404 also means it can — the registry answered, the package is just not there", async () => {
-    expect(await reach("https://npm.example.com/", "@example/a-cli", env, ok(404))).toBe("ok");
+  test("404 means this registry does not serve the package, which is not the same as reachable", async () => {
+    // Read as "ok", this sent the install at the public registry for a private scope, and
+    // the failure surfaced inside `bun add` — far from the check that should have caught it.
+    expect(await reach("https://npm.example.com/", "@example/a-cli", env, ok(404))).toBe("not-served");
   });
 
   test("401 and 403 mean a credential is needed, not that anything is broken", async () => {

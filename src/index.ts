@@ -16,9 +16,13 @@ import { EXIT, fix, header, note, result, step as line, style, type Mark } from 
 import { detect, describe } from "./platform.ts";
 import { prompter } from "./prompt.ts";
 import { State } from "./state.ts";
-import { BASE, clientsStep, handoffStep, registryStep } from "./steps.ts";
+import { BASE, BIN, clientsStep, handoffStep, registryStep } from "./steps.ts";
 import { exitCode, run, undo, type Context, type Outcome, type Step } from "./step.ts";
 import pkg from "../package.json";
+
+// Everything rig installs lands in BIN. Without this, rig installs mise and then cannot
+// find it, because the shell that started rig has a PATH from before the install.
+process.env["PATH"] = `${BIN}:${process.env["PATH"] ?? ""}`;
 
 const program = new Command();
 

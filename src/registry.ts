@@ -103,7 +103,7 @@ export function writeCredential(
   return file;
 }
 
-export type Reachability = "ok" | "needs-credential" | "unreachable";
+export type Reachability = "ok" | "needs-credential" | "not-served" | "unreachable";
 
 /**
  * Can this machine fetch from that registry?
@@ -130,7 +130,10 @@ export async function reach(
       headers: auth ? { authorization: `Basic ${auth}` } : {},
     });
     if (response.status === 401 || response.status === 403) return "needs-credential";
-    return response.ok || response.status === 404 ? "ok" : "unreachable";
+    // The registry answered and does not have this package. That is not "reachable" for
+    // the purpose of installing it — it means this is the wrong registry for this scope.
+    if (response.status === 404) return "not-served";
+    return response.ok ? "ok" : "unreachable";
   } catch {
     return "unreachable";
   }

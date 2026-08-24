@@ -14,7 +14,7 @@
  * same code walked three ways.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Needs } from "./deployment.ts";
@@ -25,18 +25,39 @@ import type { Step, Verdict } from "./step.ts";
 /** Where user-local tools go. One directory, on PATH, owned by the person. */
 export const BIN = join(homedir(), ".local", "bin");
 
+/**
+ * Is this command on PATH?
+ *
+ * PATH is read directly rather than asked of a shell. `command -v` through a subprocess
+ * depends on which shell answers and how the runtime spawns it, and it reported "not
+ * installed" for a binary that was sitting in the directory rig had just written it to.
+ * Reading the directories is unambiguous, and it costs no process.
+ */
 function has(command: string): boolean {
-  try {
-    execFileSync("command", ["-v", command], { stdio: "ignore", shell: "/bin/sh" });
-    return true;
-  } catch {
-    return false;
+  return pathTo(command) !== undefined;
+}
+
+function pathTo(command: string): string | undefined {
+  for (const dir of (process.env["PATH"] ?? "").split(":")) {
+    if (!dir) continue;
+    const candidate = join(dir, command);
+    try {
+      if (statSync(candidate).isFile()) {
+        accessSync(candidate, constants.X_OK);
+        return candidate;
+      }
+    } catch {
+      // Not here, or not executable. Try the next directory.
+    }
   }
+  return undefined;
 }
 
 function version(command: string, args: string[] = ["--version"]): string {
+  const binary = pathTo(command);
+  if (!binary) return "";
   try {
-    return execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+    return execFileSync(binary, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
       .trim()
       .split("\n")[0]!;
   } catch {
@@ -204,6 +225,21 @@ export function registryStep(needs: Needs): Step {
       const state = await reach(registry, first);
 
       if (state === "ok") return { state: "ok", detail: `${host}, reachable` };
+      if (state === "not-served") {
+        // The registry answered and does not have this package. Almost always: the scope
+        // resolves to the public registry because nothing on this machine says otherwise,
+        // and the deployment did not name its own.
+        return {
+          state: "blocked",
+          detail: `${host} does not serve ${first}`,
+          fix: [
+            `${scope} resolves to ${host} on this machine, and the package is not there.`,
+            `Ask whoever runs the deployment to set ATK_ID_CLIENT_REGISTRY,`,
+            `or point the scope at the right registry:`,
+            `  npm config set ${scope}:registry https://<your-registry>/`,
+          ],
+        };
+      }
       if (state === "unreachable") {
         return {
           state: "blocked",
@@ -258,17 +294,25 @@ export function clientsStep(needs: Needs): Step {
  * far larger thing to trust than one that names packages from a registry already in use.
  */
 export function handoffStep(needs: Needs, url: string): Step {
+  // One id per deployment, so setting up a second one runs its setup rather than
+  // reporting the first one as already done.
+  const id = "configure";
   return {
-    id: "configure",
+    id,
     requires: ["clients"],
     group: "clients",
-    check: async (): Promise<Verdict> => {
+    check: async (ctx): Promise<Verdict> => {
       const asked = needs.clients.map(manifestOf).map(readSetup).filter(Boolean);
-      return asked.length === 0
-        ? { state: "skipped", detail: "no tool asked for a setup step" }
+      if (asked.length === 0) return { state: "skipped", detail: "no tool asked for a setup step" };
+
+      // Only the tool knows whether it is configured, and asking it would mean running
+      // something on every check — which `doctor` must never do. So rig records that it
+      // ran the handoff, and a person who wants it again removes and sets up.
+      return ctx.state.wasApplied(`${id}:${url}`)
+        ? { state: "ok", detail: `${asked.length} tool${asked.length === 1 ? "" : "s"} configured` }
         : { state: "missing", detail: `${asked.length} to run` };
     },
-    apply: async () => {
+    apply: async (ctx) => {
       for (const name of needs.clients) {
         const setup = readSetup(manifestOf(name));
         if (!setup) continue;
@@ -280,6 +324,7 @@ export function handoffStep(needs: Needs, url: string): Step {
         });
         if (result.status !== 0) throw new Error(`${name} could not configure itself: ${setup}`);
       }
+      ctx.state.recordApplied(`${id}:${url}`);
     },
   };
 }
