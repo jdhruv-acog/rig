@@ -120,7 +120,13 @@ export async function run(steps: Step[], ctx: Context, options: RunOptions): Pro
   const verdicts = new Map<string, Verdict["state"]>();
 
   for (const step of order(steps)) {
-    const unmet = step.requires.filter((id) => verdicts.get(id) !== "ok");
+    // `skipped` satisfies a requirement. A step that deliberately did nothing — because
+    // there was nothing to do — must not block what comes after it, or a machine with no
+    // container runtime reports a cascade of failures for work nobody asked for.
+    const unmet = step.requires.filter((id) => {
+      const verdict = verdicts.get(id);
+      return verdict !== "ok" && verdict !== "skipped";
+    });
     if (unmet.length > 0) {
       const outcome: Outcome = {
         id: step.id,

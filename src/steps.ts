@@ -77,6 +77,14 @@ const bun: Step = {
 };
 
 /** `~/.local/bin` on PATH, which is where everything else lands. */
+/**
+ * `~/.local/bin` on PATH, which is where everything else lands.
+ *
+ * This reports and never acts. `install.sh` owns the one managed block in the shell file,
+ * and a second writer here is how PATH order becomes whichever tool ran last. It cannot
+ * change the shell that is running it either — so it says the line to run, which is the
+ * only thing that actually helps.
+ */
 const path: Step = {
   id: "path",
   requires: [],
@@ -84,11 +92,11 @@ const path: Step = {
   check: async (): Promise<Verdict> =>
     (process.env["PATH"] ?? "").split(":").includes(BIN)
       ? { state: "ok", detail: BIN }
-      : { state: "missing", detail: `${BIN} is not on PATH` },
-  apply: async () => {
-    // Nothing to install: `install.sh` owns the one managed block in the shell file. A
-    // second writer here is how PATH order becomes whichever tool ran last.
-  },
+      : {
+          state: "blocked",
+          detail: `${BIN} is not on PATH`,
+          fix: ["Open a new terminal, or run:", `export PATH="${BIN}:$PATH"`],
+        },
 };
 
 /** A tool `mise` manages, named and pinned by the caller. */

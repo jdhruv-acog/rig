@@ -185,3 +185,29 @@ describe("exitCode", () => {
     expect(exitCode([{ id: "a", group: "g", state: "missing", detail: "", applied: false }])).toBe(1);
   });
 });
+
+describe("a skipped requirement", () => {
+  test("does not block what comes after it", async () => {
+    // A machine with no container runtime used to report a cascade of failures for work
+    // nobody had asked it to do. Deliberately doing nothing is not a failure.
+    const optional = fake("optional");
+    optional.step.check = async () => ({ state: "skipped", detail: "nothing to do" });
+    const after = fake("after", ["optional"]);
+
+    const outcomes = await run([optional.step, after.step], context(), { checkOnly: false });
+
+    expect(after.box.applyCount).toBe(1);
+    expect(outcomes.find((o) => o.id === "after")?.state).toBe("ok");
+  });
+
+  test("a blocked requirement still blocks, because that one is a real fault", async () => {
+    const broken = fake("broken");
+    broken.step.check = async () => ({ state: "blocked", detail: "no", fix: ["fix it"] });
+    const after = fake("after", ["broken"]);
+
+    const outcomes = await run([broken.step, after.step], context(), { checkOnly: false });
+
+    expect(after.box.applyCount).toBe(0);
+    expect(outcomes.find((o) => o.id === "after")?.state).toBe("blocked");
+  });
+});

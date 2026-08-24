@@ -69,6 +69,10 @@ printf '\n  rig %s  ·  %s %s\n\n' "$RIG_VERSION" "$os" "$arch" >&2
 # installer edits a shell file; we suppress that, because one managed block is the point
 # and three installers each appending their own is how PATH order becomes an accident.
 if command -v bun >/dev/null 2>&1; then
+  # Use the bun that is actually here. Assuming $HOME/.bun writes a shim pointing at a
+  # path that does not exist for anybody whose bun came from brew, mise, or a custom
+  # BUN_INSTALL — and the failure lands later, on first use, far from this line.
+  bun_bin=$(command -v bun)
   say "bun          $(bun --version) — already here"
 else
   say "bun          installing to \$HOME/.bun"
@@ -76,10 +80,11 @@ else
     sh -c 'curl -fsSL https://bun.sh/install | bash' >/dev/null 2>&1 \
     || fail "bun did not install. Run this to see why:
      curl -fsSL https://bun.sh/install | bash"
+  bun_bin="$HOME/.bun/bin/bun"
+  [ -x "$bun_bin" ] || fail "bun installed, but $bun_bin is not there."
 fi
-BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
-PATH="$BUN_INSTALL/bin:$BIN_DIR:$PATH"
-export PATH BUN_INSTALL
+PATH="$(dirname "$bun_bin"):$BIN_DIR:$PATH"
+export PATH
 
 # --- 3. rig -----------------------------------------------------------------
 
@@ -107,7 +112,7 @@ fi
 mkdir -p "$BIN_DIR"
 cat > "$BIN_DIR/rig" <<SHIM
 #!/usr/bin/env sh
-exec "$BUN_INSTALL/bin/bun" run "$target/src/index.ts" "\$@"
+exec "$bun_bin" run "$target/src/index.ts" "\$@"
 SHIM
 chmod +x "$BIN_DIR/rig"
 say "rig          $BIN_DIR/rig"
@@ -124,5 +129,5 @@ say "  rig setup <deployment-url>   make this machine ready"
 say "  rig doctor                   see what this machine has"
 printf '\n' >&2
 say "If 'rig' is not found, open a new terminal, or run:"
-say "  export PATH=\"$BIN_DIR:$BUN_INSTALL/bin:\$PATH\""
+say "  export PATH=\"$BIN_DIR:$(dirname "$bun_bin"):\$PATH\""
 printf '\n' >&2
