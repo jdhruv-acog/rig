@@ -1,10 +1,10 @@
 /**
  * `deployment.ts` — asking a deployment what it needs.
  *
- * `rig` is given one address and nothing else. That address answers two questions:
- * which command-line tools talk to it, and where those packages come from. So a person
- * is never sent a list of package names in a message, and a deployment that gains a
- * service reaches every laptop with nothing rewritten.
+ * `rig` is given one address and nothing else. One route on that address says what the
+ * deployment is: its name, what it runs, and which command-line tools talk to it. So a
+ * person is never sent a list of package names in a message, and a deployment that gains
+ * a service reaches every machine with nothing rewritten.
  *
  * ## What rig will not do
  *
@@ -59,7 +59,7 @@ export async function ask(url: string, doFetch: typeof fetch = fetch): Promise<N
 
   let response: Response;
   try {
-    response = await doFetch(`${base}/v1/clients`, { headers: { accept: "application/json" } });
+    response = await doFetch(`${base}/v1/services`, { headers: { accept: "application/json" } });
   } catch (cause) {
     const text = String(cause);
     if (/certificate|self-signed|CERT_|unable to verify/i.test(text)) {
