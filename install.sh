@@ -117,7 +117,43 @@ SHIM
 chmod +x "$BIN_DIR/rig"
 say "rig          $BIN_DIR/rig"
 
-# --- 4. hand over -----------------------------------------------------------
+# --- 4. make it stick in new terminals --------------------------------------
+
+# One managed block, in one file. Without this, "open a new terminal" is a dead end: bun's
+# own installer edits a shell file and we suppressed that on purpose, so nothing else puts
+# these directories on PATH.
+#
+# Rewritten between its markers on every run, so a second install replaces the block rather
+# than appending another one.
+rc=""
+case "${SHELL:-}" in
+  *zsh)  rc="$HOME/.zshrc" ;;
+  *bash) rc="$HOME/.bashrc" ;;
+  *)     [ -f "$HOME/.zshrc" ] && rc="$HOME/.zshrc" || rc="$HOME/.profile" ;;
+esac
+
+bun_dir=$(dirname "$bun_bin")
+begin="# BEGIN rig"
+end="# END rig"
+
+if [ -n "$rc" ]; then
+  tmp_rc=$(mktemp)
+  if [ -f "$rc" ]; then
+    awk -v b="$begin" -v e="$end" '
+      $0 == b { skip = 1 } skip != 1 { print } $0 == e { skip = 0 }
+    ' "$rc" > "$tmp_rc"
+  fi
+  {
+    printf '%s\n' "$begin"
+    printf 'export PATH="%s:%s:$PATH"\n' "$BIN_DIR" "$bun_dir"
+    printf '%s\n' "$end"
+  } >> "$tmp_rc"
+  # Replace in one step, so an interrupted write never truncates somebody's shell file.
+  mv "$tmp_rc" "$rc"
+  say "path         added to $(basename "$rc")"
+fi
+
+# --- 5. hand over -----------------------------------------------------------
 
 printf '\n' >&2
 if [ -n "$DEPLOYMENT" ]; then
@@ -128,6 +164,6 @@ say "Next:"
 say "  rig setup <deployment-url>   make this machine ready"
 say "  rig doctor                   see what this machine has"
 printf '\n' >&2
-say "If 'rig' is not found, open a new terminal, or run:"
-say "  export PATH=\"$BIN_DIR:$(dirname "$bun_bin"):\$PATH\""
+say "In this terminal, or open a new one:"
+say "  export PATH=\"$BIN_DIR:$bun_dir:\$PATH\""
 printf '\n' >&2

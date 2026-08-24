@@ -36,8 +36,13 @@ describe("ask", () => {
     expect(await ask("https://id.example.com", answers({ clients: [] }))).toEqual({ clients: [] });
   });
 
-  test("an older deployment with no such route is not a failure either", async () => {
-    expect(await ask("https://id.example.com", answers({}, 404))).toEqual({ clients: [] });
+  test("a 404 is a wrong address, not a tolerable older deployment", async () => {
+    // Tolerating it made every wrong address report a healthy run — the worst outcome
+    // available to a setup tool. /v1/services predates this change, so a 404 means the
+    // thing at that address is not a deployment.
+    const error = await ask("https://wrong.example.com", answers({}, 404)).catch((e) => e);
+    expect(error).toBeInstanceOf(Unreachable);
+    expect((error as Unreachable).why).toContain("is not a deployment");
   });
 
   test("entries that are not package names are dropped, not trusted", async () => {

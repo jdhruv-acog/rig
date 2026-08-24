@@ -80,9 +80,14 @@ export async function ask(url: string, doFetch: typeof fetch = fetch): Promise<N
   }
 
   if (response.status === 404) {
-    // An older deployment has no such route. That is not a failure: it means this
-    // deployment does not say, and a person installs what they were told to.
-    return { clients: [] };
+    // Nothing at this address answers the one route every deployment has. A 404 used to be
+    // tolerated as "an older deployment that does not say" — but that made every wrong
+    // address look like a healthy run, which is the worst thing this tool could do.
+    throw new Unreachable(
+      base,
+      `${parsed.host} is not a deployment — it does not answer /v1/services.`,
+      "Check the address. It is the identity service, not one of the services behind it.",
+    );
   }
   if (!response.ok) {
     throw new Unreachable(
