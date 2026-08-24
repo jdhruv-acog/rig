@@ -215,7 +215,58 @@ const git: Step = {
   },
 };
 
-export const BASE: Step[] = [bun, path, mise, tool("uv", "latest"), tool("python", "3.14"), git, container];
+/**
+ * Can this machine fetch from GitHub over SSH? **Advisory.**
+ *
+ * A tool that fetches a private repository needs a key registered there, and the failure
+ * without one arrives much later, inside that tool, reading like the tool is broken. This
+ * is a cheap question asked at setup, where the answer is still useful.
+ *
+ * `ssh-keygen` is on every machine and needs no password. Registering the key is the part
+ * that needs a person, so this reports and never acts.
+ */
+const github: Step = {
+  id: "github",
+  requires: ["git"],
+  group: "base",
+  check: async (): Promise<Verdict> => {
+    if (!has("ssh")) return { state: "skipped", detail: "no ssh on this machine" };
+    try {
+      // GitHub always exits non-zero here — it offers no shell — so the greeting in the
+      // output is the answer, not the exit code.
+      execFileSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-T", "git@github.com"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      return { state: "ok", detail: "SSH to GitHub works" };
+    } catch (cause) {
+      const said = String((cause as { stderr?: string }).stderr ?? "");
+      const greeting = /Hi ([^!]+)!/.exec(said);
+      if (greeting) return { state: "ok", detail: `SSH to GitHub works, as ${greeting[1]}` };
+      return {
+        state: "note",
+        detail: "no SSH key registered with GitHub. A private pack cannot be fetched",
+        fix: [
+          "Make a key, and register it:",
+          "  ssh-keygen -t ed25519 -C \"$USER\" -f ~/.ssh/id_ed25519 -N \"\"",
+          "  cat ~/.ssh/id_ed25519.pub",
+          "then paste it at  https://github.com/settings/ssh/new",
+        ],
+      };
+    }
+  },
+};
+
+export const BASE: Step[] = [
+  bun,
+  path,
+  mise,
+  tool("uv", "latest"),
+  tool("python", "3.14"),
+  git,
+  github,
+  container,
+];
 
 // ── the deployment's clients ─────────────────────────────────────────────────
 
