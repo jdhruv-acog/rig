@@ -58,6 +58,7 @@ const MARK: Record<Outcome["state"], Mark> = {
   missing: "note",
   blocked: "fail",
   skipped: "skip",
+  note: "note",
 };
 
 function context(): Context {
@@ -103,14 +104,16 @@ function summarise(outcomes: Outcome[], next?: string[]): never {
     result({ ok: exitCode(outcomes) === 0, steps: outcomes });
     process.exit(exitCode(outcomes));
   }
-  const ok = outcomes.filter((o) => o.state === "ok").length;
+  const ok = outcomes.filter((o) => o.state === "ok" || o.state === "note").length;
   const wrong = outcomes.filter((o) => o.state === "missing" || o.state === "blocked").length;
   const skipped = outcomes.filter((o) => o.state === "skipped").length;
+  const notes = outcomes.filter((o) => o.state === "note").length;
 
   header("summary");
   note(
     `  ${ok} ready` +
       (skipped > 0 ? ` · ${skipped} skipped` : "") +
+      (notes > 0 ? ` · ${style.yellow(`${notes} to read`)}` : "") +
       (wrong > 0 ? ` · ${style.red(`${wrong} to fix`)}` : ""),
   );
   if (wrong === 0 && next) {

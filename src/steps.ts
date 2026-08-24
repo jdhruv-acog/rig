@@ -191,9 +191,42 @@ function commandsOf(packageName: string): string[] {
   return [];
 }
 
+/**
+ * Where bun keeps global packages — asked, never assumed.
+ *
+ * `~/.bun/install/global` is right on some versions and not on others, and a hardcoded
+ * path made `bun add -g` succeed while the check that followed reported nothing installed.
+ * `bun pm ls -g` prints the directory on its first line, whatever version is running.
+ */
+/** Where bun puts the commands it installs globally. Asked, never assumed. */
+function bunBin(): string {
+  try {
+    return execFileSync("bun", ["pm", "bin", "-g"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return join(homedir(), ".bun", "bin");
+  }
+}
+
+function globalRoot(): string {
+  try {
+    const first = execFileSync("bun", ["pm", "ls", "-g"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).split("\n")[0];
+    const dir = first?.replace(/\s+node_modules.*$/, "").trim();
+    if (dir && existsSync(join(dir, "node_modules"))) return join(dir, "node_modules");
+  } catch {
+    // bun is absent or too old to answer. Fall through to the usual place.
+  }
+  return join(homedir(), ".bun", "install", "global", "node_modules");
+}
+
 /** The installed package's own manifest, or undefined when it is not installed. */
 function manifestOf(packageName: string): unknown {
-  const file = join(homedir(), ".bun", "install", "global", "node_modules", packageName, "package.json");
+  const file = join(globalRoot(), packageName, "package.json");
   if (!existsSync(file)) return undefined;
   try {
     return JSON.parse(readFileSync(file, "utf8"));
@@ -278,7 +311,18 @@ export function clientsStep(needs: Needs): Step {
       if (needs.clients.length === 0) return { state: "skipped", detail: "this deployment names no packages" };
       const missing = needs.clients.filter((name) => manifestOf(name) === undefined);
       if (missing.length > 0) return { state: "missing", detail: `${missing.length} of ${needs.clients.length} not installed` };
+
       const commands = needs.clients.flatMap(commandsOf);
+      // Installed, but this shell was started before they existed. Saying "ok" here sends
+      // a person straight to `command not found`, which reads like the install failed.
+      const unreachable = commands.filter((c) => !has(c));
+      if (unreachable.length > 0) {
+        return {
+          state: "note",
+          detail: `${commands.join(" · ")} — installed, not yet on this shell's PATH`,
+          fix: [`Open a new terminal, or run:`, `export PATH="${bunBin()}:$PATH"`],
+        };
+      }
       return { state: "ok", detail: commands.join(" · ") };
     },
     apply: async () => run("bun", ["add", "-g", ...needs.clients]),

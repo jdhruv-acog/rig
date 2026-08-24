@@ -33,7 +33,9 @@ export type Verdict =
   /** It is not true, and `rig` must not or cannot make it true. `fix` says who can. */
   | { state: "blocked"; detail: string; fix: string[] }
   /** It is deliberately not done. A declined privileged step, or an absent option. */
-  | { state: "skipped"; detail: string };
+  | { state: "skipped"; detail: string }
+  /** It is true, and something about it is worth knowing. Never a failure. */
+  | { state: "note"; detail: string; fix: string[] };
 
 export interface Context {
   platform: Platform;
@@ -125,7 +127,7 @@ export async function run(steps: Step[], ctx: Context, options: RunOptions): Pro
     // container runtime reports a cascade of failures for work nobody asked for.
     const unmet = step.requires.filter((id) => {
       const verdict = verdicts.get(id);
-      return verdict !== "ok" && verdict !== "skipped";
+      return verdict !== "ok" && verdict !== "skipped" && verdict !== "note";
     });
     if (unmet.length > 0) {
       const outcome: Outcome = {
@@ -159,7 +161,7 @@ export async function run(steps: Step[], ctx: Context, options: RunOptions): Pro
       group: step.group,
       state: verdict.state,
       detail: verdict.detail,
-      ...(verdict.state === "blocked" ? { fix: verdict.fix } : {}),
+      ...(verdict.state === "blocked" || verdict.state === "note" ? { fix: verdict.fix } : {}),
       applied,
     };
     verdicts.set(step.id, verdict.state);

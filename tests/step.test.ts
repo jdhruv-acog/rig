@@ -211,3 +211,20 @@ describe("a skipped requirement", () => {
     expect(outcomes.find((o) => o.id === "after")?.state).toBe("blocked");
   });
 });
+
+describe("a note", () => {
+  test("is true, does not block, and does not fail the run", async () => {
+    // "Installed, but not on this shell's PATH" is not a failure and not a clean pass.
+    // Calling it ok sends a person to `command not found`; calling it missing makes them
+    // think the install broke.
+    const noted = fake("clients");
+    noted.step.check = async () => ({ state: "note", detail: "installed, not on PATH", fix: ["open a new terminal"] });
+    const after = fake("configure", ["clients"]);
+
+    const outcomes = await run([noted.step, after.step], context(), { checkOnly: false });
+
+    expect(outcomes.find((o) => o.id === "clients")?.fix).toEqual(["open a new terminal"]);
+    expect(after.box.applyCount).toBe(1);
+    expect(exitCode(outcomes)).toBe(0);
+  });
+});
