@@ -2,7 +2,7 @@
 # rig — put this tool on a machine that has nothing.
 #
 #   curl -fsSL https://<host>/install.sh | sh
-#   curl -fsSL https://<host>/install.sh | sh -s -- --site https://<your-site>/site.yaml
+#   curl -fsSL https://<host>/install.sh | sh -s -- https://identity.example.com
 #
 # It does three things and stops: read the platform, install Bun, fetch rig. It never
 # learns about registries, products, deployments or credentials. Those belong to `rig`,
@@ -20,14 +20,16 @@ RIG_VERSION="${RIG_VERSION:-0.1.0}"
 RIG_REPO="${RIG_REPO:-jdhruv-acog/rig}"
 RIG_HOME="${RIG_HOME:-$HOME/.local/share/rig}"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
-SITE=""
+DEPLOYMENT=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --site) SITE="${2:-}"; shift 2 ;;
     --version) RIG_VERSION="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) echo "install.sh: unknown option '$1'" >&2; exit 2 ;;
+    -*) echo "install.sh: unknown option '$1'" >&2; exit 2 ;;
+    # A bare argument is the deployment to set this machine up for. Handing it over
+    # here makes the whole thing one command for somebody who was given one address.
+    *) DEPLOYMENT="$1"; shift ;;
   esac
 done
 
@@ -113,13 +115,13 @@ say "rig          $BIN_DIR/rig"
 # --- 4. hand over -----------------------------------------------------------
 
 printf '\n' >&2
-if [ -n "$SITE" ]; then
-  exec "$BIN_DIR/rig" init --site "$SITE"
+if [ -n "$DEPLOYMENT" ]; then
+  exec "$BIN_DIR/rig" setup "$DEPLOYMENT"
 fi
 
 say "Next:"
-say "  rig init --site <url>    point rig at your organisation"
-say "  rig doctor               see what this machine has"
+say "  rig setup <deployment-url>   make this machine ready"
+say "  rig doctor                   see what this machine has"
 printf '\n' >&2
 say "If 'rig' is not found, open a new terminal, or run:"
 say "  export PATH=\"$BIN_DIR:$BUN_INSTALL/bin:\$PATH\""

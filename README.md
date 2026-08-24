@@ -4,9 +4,11 @@ Make a machine ready. Install the tools, get access to the private registries, s
 product. Undo all of it.
 
 ```sh
-curl -fsSL https://<host>/install.sh | sh -s -- --site https://go.example.com/site.yaml
-rig install hello
+curl -fsSL https://<host>/install.sh | sh -s -- https://identity.example.com
 ```
+
+One command. The deployment says which tools talk to it, so nobody is sent a list of
+package names to paste.
 
 No administrator password. No `git`. macOS, Linux, and WSL.
 
@@ -15,13 +17,10 @@ No administrator password. No `git`. macOS, Linux, and WSL.
 ## What it does
 
 ```
-rig init --site <url>     point rig at your organisation
-rig login                 one credential → every registry your site names
-rig install <product>     set a product up on this machine
-rig remove <product>      undo exactly what rig applied
-rig doctor                is this machine correct?
-rig status                what is on this machine, on one screen
-rig uninstall             remove rig, and everything it applied
+rig setup <deployment-url>    make this machine ready for a deployment
+rig base                      the runtimes only — nothing that needs a credential
+rig doctor [deployment-url]   is this machine correct? Changes nothing
+rig remove [deployment-url]   undo exactly what rig applied
 ```
 
 Every command accepts `--json`. Every command is safe to run again.
