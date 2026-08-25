@@ -12,8 +12,10 @@
 #
 # rig installs a public toolchain into ~/.aganitha/rig, signs the machine in to
 # GitHub, fetches the private command repo, and hands over. It knows no company
-# name, no hostname, and no package name — the pack argument is a word it carries
-# and never interprets. scripts/check-clean.sh proves that in CI.
+# hostname, no registry, no package name and no product name — the pack argument
+# is a word it carries and never interprets. It names exactly one private thing,
+# the command repository it hands over to, because a one-line installer has to
+# know where to get the next step. scripts/check-clean.sh holds that line in CI.
 #
 # It is POSIX sh because macOS ships bash 3.2 from 2007 and Debian's /bin/sh is
 # dash. It is one file because it is fetched with curl and run once; it is never
@@ -78,7 +80,7 @@ NODE_BIN=""
 
 # ─── output ─────────────────────────────────────────────────────────────────
 #
-# The same four marks igniva uses, so a person who has read one of our tools has
+# The same four marks the other tools use, so a person who has read one of our tools has
 # read all of them. Progress goes to stderr and results to stdout, so a pipe and
 # a redirect both behave.
 if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -236,18 +238,35 @@ verify_sha256() {
     "Do not run this file. Report it."
 }
 
-# Rewrite the region between two markers, or append it when absent. The file is
-# rebuilt beside itself and renamed, so a person's own lines above and below the
-# block survive every rerun and an interruption cannot truncate the file.
+# Rewrite the region between two markers, in place, or append it when absent.
+# The file is rebuilt beside itself and renamed, so a person's own lines above
+# and below the block survive every rerun in their original order, and an
+# interruption cannot truncate the file.
+#
+# The block is rewritten where it already is rather than moved to the end,
+# because its position decides PATH order: a block that migrates past a line the
+# person wrote later would silently start overriding it.
+#
+# The body reaches awk through the environment, not through -v, because -v
+# expands backslash escapes and a path is allowed to contain a backslash.
+#
+# A second marked region — the residue of a botched hand edit — is dropped
+# entirely, so a rerun leaves exactly one block however many it found.
 write_block() {
   local file begin end body tmp
   file="$1"; begin="$2"; end="$3"; body="$4"
   [ -f "$file" ] || : > "$file"
   tmp="$file.rig.new"
-  awk -v b="$begin" -v e="$end" '
-    $0 == b { skip = 1 } skip != 1 { print } $0 == e { skip = 0 }
+  RIG_BLOCK_BODY="$body" awk -v b="$begin" -v e="$end" '
+    $0 == b {
+      skip = 1
+      if (found != 1) { found = 1; print b; print ENVIRON["RIG_BLOCK_BODY"]; print e }
+      next
+    }
+    skip == 1 { if ($0 == e) skip = 0; next }
+    { print }
+    END { if (found != 1) { print b; print ENVIRON["RIG_BLOCK_BODY"]; print e } }
   ' "$file" > "$tmp"
-  { printf '%s\n' "$begin"; printf '%s\n' "$body"; printf '%s\n' "$end"; } >> "$tmp"
 
   # Identical content is left alone, so a rerun does not touch the modification
   # time of a file the person also edits. Returns 1 when nothing changed, so the
@@ -288,6 +307,23 @@ detect_platform() {
     if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" = 1 ]; then
       ARCH=arm64
     fi
+  fi
+
+  # The published node build links glibc. On musl it installs and then fails at
+  # exec, which reads as a broken download rather than an unsupported system.
+  if [ "$OS" = linux ] && [ -f /etc/alpine-release ]; then
+    die 2 "platform" "rig has no build for Alpine, which uses musl rather than glibc." \
+      "A Debian or Ubuntu base image works."
+  fi
+
+  # node 24 needs macOS 13.5 or newer. Saying so here beats a dynamic-linker
+  # error from a binary that downloaded and verified perfectly.
+  if [ "$OS" = macos ]; then
+    case "$(sw_vers -productVersion 2>/dev/null)" in
+      1[0-2].*|[0-9].*)
+        die 2 "platform" "rig needs macOS 13 or newer. This is $(sw_vers -productVersion)." \
+          "The toolchain it installs does not run on this release." ;;
+    esac
   fi
 }
 
@@ -338,14 +374,14 @@ clt_present() {
 # softwareupdate does not list the Command Line Tools unless this marker exists.
 # Listing needs no privilege, so it is safe even when we already know the install
 # will need somebody else's password.
-clt_label() {
-  if [ ! -f "$CLT_MARKER" ]; then
-    touch "$CLT_MARKER" 2>/dev/null || return 1
-    CLT_MARKER_MINE=1
-  fi
-  # Newer macOS prints "Label: …"; older releases print "* …". Take the last
-  # match, because Software Update lists these in ascending version order.
-  /usr/sbin/softwareupdate -l 2>&1 | /usr/bin/awk -F': ' '
+#
+# Newer macOS prints "Label: …"; older releases print "* …". Take the last
+# match, because Software Update lists these in ascending version order.
+#
+# The parser is its own function so a test can feed it both formats without a
+# Mac and without Software Update. It reads stdin and prints one label.
+clt_label_parse() {
+  /usr/bin/awk -F': ' '
     /Label: Command Line Tools/ { label = $2 }
     /^[[:space:]]*\*/ && /Command Line Tools/ {
       line = $0
@@ -355,6 +391,14 @@ clt_label() {
     }
     END { if (label != "") print label }
   '
+}
+
+clt_label() {
+  if [ ! -f "$CLT_MARKER" ]; then
+    touch "$CLT_MARKER" 2>/dev/null || return 1
+    CLT_MARKER_MINE=1
+  fi
+  /usr/sbin/softwareupdate -l 2>&1 | clt_label_parse
 }
 
 clt_cleanup() {
@@ -486,13 +530,13 @@ ensure_gh_auth() {
     return 0
   fi
 
-  if [ -n "${GH_TOKEN:-}" ] || [ -n "${GITHUB_TOKEN:-}" ]; then
-    gh_authenticated && { ok "github" "signed in with a token"; return 0; }
-  fi
-
+  # gh reads GH_TOKEN and GITHUB_TOKEN itself, so the check above already covers
+  # a machine that holds a token. Reaching here means neither is set or valid.
   if [ "$INTERACTIVE" -eq 0 ]; then
-    die 1 "github" "this machine is not signed in to GitHub, and nothing can ask" \
-      "Set GH_TOKEN, or run 'gh auth login' from a terminal first."
+    die 2 "github" "this machine is not signed in to GitHub, and nothing can ask" \
+      "A machine holds a credential; it does not sign in. Set one:" \
+      "  GH_TOKEN=…" \
+      "Or run 'gh auth login' from a terminal first."
   fi
 
   # Interactive on purpose. gh asks its own questions and opens a browser; its
@@ -628,19 +672,28 @@ ensure_uv() {
 
 ensure_python() {
   UV_PYTHON_INSTALL_DIR="$RIG_HOME/python"; export UV_PYTHON_INSTALL_DIR
-  # The check is "the version we require", not "a python exists". A stray python3
-  # dragged in as somebody else's dependency is not the interpreter we pinned.
-  if uv python find "$PYTHON_VERSION" >/dev/null 2>&1; then
-    ok "python" "$PYTHON_VERSION"
+  # The shims land in our own bin directory, which is already on PATH. They point
+  # at the unversioned interpreter directory, so a patch release keeps them valid.
+  UV_PYTHON_BIN_DIR="$BIN_DIR"; export UV_PYTHON_BIN_DIR
+
+  # The check is "the version we require", and "a python3 exists" is not that.
+  # On macOS /usr/bin/python3 is the developer-tools stub, and any interpreter
+  # dragged in as somebody else's dependency is not the one we pinned.
+  if [ -x "$BIN_DIR/python3" ] && "$BIN_DIR/python3" --version >/dev/null 2>&1; then
+    ok "python" "$("$BIN_DIR/python3" --version 2>&1 | awk '{print $2}')"
     return 0
   fi
+
   say "Installing Python $PYTHON_VERSION."
-  uv python install "$PYTHON_VERSION" >/dev/null 2>&1 || true
-  uv python find "$PYTHON_VERSION" >/dev/null 2>&1 \
-    || die 1 "python" "Python $PYTHON_VERSION did not install" \
-         "Run this to see why:" "  uv python install $PYTHON_VERSION"
+  uv python install "$PYTHON_VERSION" --default \
+    --preview-features python-install-default >/dev/null 2>&1 || true
+
+  if ! { [ -x "$BIN_DIR/python3" ] && "$BIN_DIR/python3" --version >/dev/null 2>&1; }; then
+    die 1 "python" "Python $PYTHON_VERSION did not install" \
+      "Run this to see why:" "  uv python install $PYTHON_VERSION --default"
+  fi
   record python "$PYTHON_VERSION" "$RIG_HOME/python"
-  ok "python" "$PYTHON_VERSION installed"
+  ok "python" "$("$BIN_DIR/python3" --version 2>&1 | awk '{print $2}')  installed"
 }
 
 # Node is here for one reason: tools published to npm carry a
@@ -878,6 +931,9 @@ handover() {
   # The absolute path is used because the shell block has not taken effect in
   # this process — it is read by the *next* shell, not this one.
   ATK_FROM_RIG=1; export ATK_FROM_RIG
+  if [ "$ASSUME_YES" -eq 1 ]; then
+    exec "$COMMANDS_HOME/bin/atk" install "$PACK" --yes
+  fi
   exec "$COMMANDS_HOME/bin/atk" install "$PACK"
 }
 

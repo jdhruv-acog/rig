@@ -46,10 +46,13 @@ assert_no_file() {
   if [ -f "$2" ]; then fail "$1" "file should not exist: $2"; else pass "$1"; fi
 }
 
+# `|| got=$?` rather than toggling `set -e` off and on: a helper that restores
+# `set -e` unconditionally turns it on in a caller that had it off, and the next
+# expected failure ends the run instead of being counted.
 assert_status() {  # assert_status <name> <want> <command...>
   local name want got
   name="$1"; want="$2"; shift 2
-  set +e; "$@" >/dev/null 2>&1; got=$?; set -e
+  got=0; "$@" >/dev/null 2>&1 || got=$?
   assert_eq "$name" "$want" "$got"
 }
 
@@ -96,4 +99,54 @@ report() {
   fi
   printf '%s%s of %s cases failed%s\n\n' "$T_RED" "$FAILED" "$CASES" "$T_OFF"
   return 1
+}
+
+# Run a command in a subshell and check its exit code. Needed wherever the thing
+# under test may call `die`, which exits: without the subshell that exit would
+# take the whole test run with it.
+assert_exits() {  # assert_exits <name> <want> <command...>
+  local name want got
+  name="$1"; want="$2"; shift 2
+  got=0; ( "$@" ) >/dev/null 2>&1 || got=$?
+  assert_eq "$name" "$want" "$got"
+}
+
+# How many times a line matching a pattern appears in a file. Used to prove a
+# block was rewritten rather than appended a second time.
+count_matching() {  # count_matching <pattern> <file>
+  local n
+  [ -f "$2" ] || { echo 0; return 0; }
+  n=$(grep -c -- "$1" "$2" 2>/dev/null) || n=0
+  printf '%s\n' "$n"
+}
+
+# A fake executable with a body of its own, for tools whose answer depends on
+# their arguments — `uname -s` and `uname -m` are one program with two answers.
+# The call is recorded before the body runs, so a count is still exact when the
+# body exits non-zero.
+stub_body() {  # stub_body <dir> <name> <body>
+  local dir name
+  dir="$1"; name="$2"
+  mkdir -p "$dir"
+  { printf '#!/bin/sh\n'
+    printf 'echo "$*" >> "%s/.calls.%s"\n' "$dir" "$name"
+    printf '%s\n' "$3"
+  } > "$dir/$name"
+  chmod +x "$dir/$name"
+}
+
+# Record the call, then run the real tool. For things a hermetic run genuinely
+# needs — tar, unzip, git — where the question is "how many times", not "what
+# would it have done". The real path is resolved now, so the wrapper cannot find
+# itself later.
+spy() {  # spy <dir> <name>
+  local dir name real
+  dir="$1"; name="$2"
+  real=$(command -v "$name") || { printf 'spy: no %s on this machine\n' "$name" >&2; return 1; }
+  mkdir -p "$dir"
+  { printf '#!/bin/sh\n'
+    printf 'echo "$*" >> "%s/.calls.%s"\n' "$dir" "$name"
+    printf 'exec %s "$@"\n' "$real"
+  } > "$dir/$name"
+  chmod +x "$dir/$name"
 }

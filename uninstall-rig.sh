@@ -52,7 +52,14 @@ die() {
 }
 
 connect_terminal() {
-  if [ ! -t 0 ] && [ -r /dev/tty ]; then exec < /dev/tty || true; fi
+  # /dev/tty can exist, be world-readable, and still refuse to open — a session
+  # with no controlling terminal returns ENXIO. `[ -r ]` tests the permission
+  # bits and answers yes anyway, and a failed redirection on `exec` is fatal in a
+  # non-interactive shell, so `|| true` is never reached. Probe in a subshell,
+  # where the failure can be silenced, and only then take it for real.
+  if [ ! -t 0 ] && ( : < /dev/tty ) 2>/dev/null; then
+    exec < /dev/tty
+  fi
 }
 
 confirm() {
@@ -139,7 +146,10 @@ main() {
 
   check_packs_first
 
-  group "This will remove"
+  # Name the tree before listing anything. AGANITHA_HOME is honoured from the
+  # environment, so a stale value would otherwise send this at a different tree
+  # without ever saying so.
+  group "This will remove, from $AGANITHA_HOME"
   entries=0
   while IFS="$(printf '\t')" read -r name _version where _; do
     [ -n "$name" ] || continue
