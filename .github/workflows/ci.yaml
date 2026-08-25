@@ -1,0 +1,74 @@
+name: ci
+
+# rig is fetched with curl and run once, on somebody's laptop, before anything
+# else exists. There is no staging and no rollback: whatever is on the branch is
+# what runs. So every gate below has to pass on every push.
+
+on:
+  push:
+  pull_request:
+  schedule:
+    # The pins job asks the vendors whether the recorded checksums still match
+    # what they publish. Nothing in a push can change that answer, so it is
+    # checked on a schedule as well.
+    - cron: '0 6 * * 1'
+
+jobs:
+  shell:
+    name: syntax and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dash and shellcheck
+        # dash is Debian's /bin/sh. bash accepts things dash refuses, so a
+        # script that only ever ran under bash is not known to be POSIX.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq dash shellcheck
+      - run: sh tests/run.sh
+
+  publishable:
+    name: safe to publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # No hostname, no package name, no product name, no credential. This
+      # repository is public and this is the line that keeps it publishable.
+      - run: sh scripts/check-clean.sh .
+
+  pins:
+    name: pinned checksums
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh tests/pins.sh
+
+  containers:
+    name: real installs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The real script, real downloads, as a non-root user: with sudo, without
+      # sudo at all, and on an image missing curl so the refusal is exercised.
+      - run: sh tests/docker/run.sh
+
+  macos:
+    name: real install on macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the toolchain into a throwaway HOME
+        run: |
+          export HOME="$(mktemp -d)"
+          sh rig.sh --yes
+          . "$HOME/.aganitha/rig/env.sh"
+          bun --version && uv --version && node --version && gh --version
+          # The interpreter must be rig's, never /usr/bin/python3 — which is a
+          # developer-tools stub, not a Python.
+          python3 --version | grep -q '3\.14' || { echo "python3 is not rig's"; exit 1; }
+          test ! -d "$HOME/.local" || { echo "wrote into ~/.local"; exit 1; }
+      - name: A second run must change nothing
+        run: |
+          export HOME="$(mktemp -d)"
+          sh rig.sh --yes >/dev/null 2>&1
+          cp "$HOME/.aganitha/rig/manifest" /tmp/before
+          sh rig.sh --yes >/dev/null 2>&1
+          diff /tmp/before "$HOME/.aganitha/rig/manifest"
