@@ -756,7 +756,7 @@ ensure_node() {
 # one place where PATH is decided.
 
 write_env() {
-  local tmp seen dir changed
+  local tmp seen dir changed prefix
   mkdir -p "$RIG_HOME"
   tmp="$ENV_FILE.new"
   {
@@ -766,20 +766,33 @@ write_env() {
     [ -d "$RIG_HOME/bun" ]    && printf 'export BUN_INSTALL="%s"\n' "$RIG_HOME/bun"
     [ -d "$RIG_HOME/python" ] && printf 'export UV_PYTHON_INSTALL_DIR="%s"\n' "$RIG_HOME/python"
 
-    # Deduplicated in order, so a repeated entry never piles up and the first
-    # match wins predictably.
-    seen=""
-    for dir in "$BIN_DIR" "$NODE_BIN" "$BUN_GLOBAL_BIN" "$BUN_BIN" "$UV_BIN"; do
+    # One PATH line, built in priority order: the first directory listed is the
+    # first searched. Writing a line per directory would invert that, because
+    # each prepend pushes the one before it down.
+    #
+    # Deduplicated, so a directory that serves two purposes — bun's own bin is
+    # usually also where it puts global commands — appears once.
+    prefix=""; seen=""
+    for dir in "$BUN_GLOBAL_BIN" "$BIN_DIR" "$NODE_BIN" "$BUN_BIN" "$UV_BIN"; do
       [ -n "$dir" ] || continue
       case ":$seen:" in *":$dir:"*) continue ;; esac
       seen="$seen:$dir"
-      printf 'PATH="%s${PATH:+:$PATH}"\n' "$dir"
+      prefix="${prefix:+$prefix:}$dir"
     done
+    [ -n "$prefix" ] && printf 'PATH="%s${PATH:+:$PATH}"\n' "$prefix"
 
     # An `if`, not `&&`: a trailing false `&&` makes this file return non-zero,
     # which exits any shell whose rc runs under `set -e`.
+    #
+    # Two directories rig does not own, added when they exist. The first holds
+    # the commands the private repository ships; the second is where a pack puts
+    # a binary of its own. Naming them here keeps PATH a single fact, and the
+    # guard means neither has to exist for this file to be correct.
     printf 'if [ -d "$AGANITHA_HOME/commands/bin" ]; then\n'
     printf '  PATH="$AGANITHA_HOME/commands/bin:$PATH"\n'
+    printf 'fi\n'
+    printf 'if [ -d "$AGANITHA_HOME/bin" ]; then\n'
+    printf '  PATH="$AGANITHA_HOME/bin:$PATH"\n'
     printf 'fi\n'
     printf 'export PATH\n'
   } > "$tmp"

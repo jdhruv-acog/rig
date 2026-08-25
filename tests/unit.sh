@@ -159,7 +159,7 @@ assert_contains "and what it got" "$sum" "$out"
 suite "detect_platform"
 
 # uname is one program with two answers, so the stub reads its own argument.
-plat() {  # plat <uname -s> <uname -m> [sysctl proc_translated] -> "<os> <arch>"
+plat() {  # plat <uname -s> <uname -m> [proc_translated] [macOS version] -> "<os> <arch>"
   local dir
   dir=$(case_dir)/bin
   stub_body "$dir" uname "case \"\$1\" in
@@ -168,6 +168,7 @@ plat() {  # plat <uname -s> <uname -m> [sysctl proc_translated] -> "<os> <arch>"
   *) echo '$1' ;;
 esac"
   stub "$dir" sysctl 0 "${3:-0}"
+  stub "$dir" sw_vers 0 "${4:-15.2}"
   PATH="$dir:$PATH_AT_START"
   OS=""; ARCH=""
   detect_platform
@@ -183,6 +184,18 @@ assert_eq "Linux amd64"         "linux x64"   "$(plat Linux amd64)"
 # Under Rosetta an Apple Silicon Mac reports x86_64, and installing the x64
 # toolchain for that answer runs emulated for years with nothing to say so.
 assert_eq "Darwin x86_64 under Rosetta is arm64" "macos arm64" "$(plat Darwin x86_64 1)"
+
+# node 24 needs macOS 13.5 or newer, so an older Mac is refused here rather than
+# by a dynamic-linker error from a binary that downloaded and verified perfectly.
+d=$(case_dir)/bin
+stub_body "$d" uname "case \"\$1\" in -s) echo Darwin ;; *) echo arm64 ;; esac"
+stub "$d" sysctl 0 "0"
+stub "$d" sw_vers 0 "12.7.1"
+PATH="$d:$PATH_AT_START"
+assert_exits "macOS 12 is refused, exit 2" 2 detect_platform
+assert_contains "and it names the release" "12.7.1" "$( (detect_platform) 2>&1 )"
+PATH="$PATH_AT_START"
+assert_eq "macOS 13 is fine" "macos arm64" "$(plat Darwin arm64 0 13.5)"
 
 d=$(case_dir)/bin
 stub_body "$d" uname "case \"\$1\" in -s) echo FreeBSD ;; *) echo amd64 ;; esac"

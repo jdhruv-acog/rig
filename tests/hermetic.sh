@@ -1,6 +1,9 @@
 #!/bin/sh
 # shellcheck shell=sh
 # shellcheck disable=SC3043  # `local` — see rig.sh for the portability reasoning
+# shellcheck disable=SC2016  # the single quotes are the assertion: env.sh must
+#   contain these characters literally, and the shell fragments handed to `sh -c`
+#   must reach it unexpanded.
 #
 # hermetic — whole runs of rig.sh and uninstall-rig.sh, with nothing real behind
 # them.
