@@ -136,7 +136,7 @@ that runtime. A bootstrapper written in the thing it bootstraps needs a
 bootstrapper of its own, which is a shell script fetched with `curl` — the file
 you are reading about, now with a second program behind it.
 
-That second program would carry everything a program carries: a version on disk,
+That second program carries everything a program carries: a version on disk,
 a place to install it, an update path, a dependency list, a lockfile, a build
 step, and a release process. All of it for something that runs twice a year, once
 per machine, for about three minutes.

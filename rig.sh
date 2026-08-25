@@ -238,6 +238,25 @@ verify_sha256() {
     "Do not run this file. Report it."
 }
 
+# Follow a symbolic link to the file it finally points at.
+#
+# Writing through `mv` replaces a symlink with a regular file. A shell file
+# symlinked into a dotfiles repository is common, and replacing it detaches that
+# repository silently: it stops receiving changes, and the block we wrote is not
+# in it either. So the link is resolved and the target is written.
+resolve_link() {
+  local target link
+  target="$1"
+  while [ -L "$target" ]; do
+    link=$(readlink "$target")
+    case "$link" in
+      /*) target="$link" ;;
+      *)  target="$(dirname "$target")/$link" ;;
+    esac
+  done
+  printf '%s' "$target"
+}
+
 # Rewrite the region between two markers, in place, or append it when absent.
 # The file is rebuilt beside itself and renamed, so a person's own lines above
 # and below the block survive every rerun in their original order, and an
@@ -254,7 +273,7 @@ verify_sha256() {
 # entirely, so a rerun leaves exactly one block however many it found.
 write_block() {
   local file begin end body tmp
-  file="$1"; begin="$2"; end="$3"; body="$4"
+  file=$(resolve_link "$1"); begin="$2"; end="$3"; body="$4"
   [ -f "$file" ] || : > "$file"
   tmp="$file.rig.new"
   RIG_BLOCK_BODY="$body" awk -v b="$begin" -v e="$end" '

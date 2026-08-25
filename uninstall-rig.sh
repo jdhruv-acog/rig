@@ -71,12 +71,31 @@ confirm() {
   case "$answer" in y|Y|yes|YES) return 0 ;; *) return 1 ;; esac
 }
 
+# Follow a symbolic link to the file it finally points at.
+#
+# Writing through `mv` replaces a symlink with a regular file. A shell file
+# symlinked into a dotfiles repository is common, and replacing it detaches that
+# repository silently: it stops receiving changes, and the block we wrote is not
+# in it either. So the link is resolved and the target is written.
+resolve_link() {
+  local target link
+  target="$1"
+  while [ -L "$target" ]; do
+    link=$(readlink "$target")
+    case "$link" in
+      /*) target="$link" ;;
+      *)  target="$(dirname "$target")/$link" ;;
+    esac
+  done
+  printf '%s' "$target"
+}
+
 # Remove a marker block and leave every other line exactly as it was. Rebuilt
 # beside the file and renamed, so an interruption cannot truncate somebody's
 # shell configuration.
 strip_block() {
   local file tmp
-  file="$1"
+  file=$(resolve_link "$1")
   [ -f "$file" ] || return 0
   grep -q "^$BLOCK_BEGIN\$" "$file" 2>/dev/null || return 0
   tmp="$file.rig.new"

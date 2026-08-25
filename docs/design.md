@@ -94,8 +94,8 @@ Two entries are deliberately absent:
 - **Anything rig found rather than installed.** Covered above.
 
 An unchanged entry is left exactly as it is, timestamp included. The time in the
-manifest answers "when did rig install this". Rewriting it on every run would
-turn it into "when did rig last run", which is a different and less useful fact.
+manifest answers "when did rig install this". Rewriting it on every run turns
+it into "when did rig last run", which is a different and less useful fact.
 It also makes the file byte-stable, which is what lets a test prove that a second
 run changed nothing.
 
@@ -128,7 +128,7 @@ uv's binary — and writes the answer. A path guessed at the top of a script
 becomes a PATH entry that points at nothing.
 
 `env.sh` itself runs no subprocess. It is read on every shell start, so it holds
-literal paths only; a `bun pm bin -g` inside it would cost a process on every
+literal paths only; a `bun pm bin -g` inside it costs a process on every
 prompt. Its last lines are an `if`, not an `&&`, because a trailing false `&&`
 makes the file return non-zero, which exits any shell whose startup file runs
 under `set -e`.
