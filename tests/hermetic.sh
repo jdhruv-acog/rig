@@ -223,8 +223,8 @@ run_uninstall() {
 
 build_fixtures
 
-MANIFEST_OF()  { printf '%s' "$1/.aganitha/rig/manifest"; }
-ENVFILE_OF()   { printf '%s' "$1/.aganitha/rig/env.sh"; }
+MANIFEST_OF()  { printf '%s' "$1/.aganitha/toolchain/manifest"; }
+ENVFILE_OF()   { printf '%s' "$1/.aganitha/env.sh"; }
 
 # ─── a first run on an empty machine ────────────────────────────────────────
 
@@ -245,13 +245,13 @@ for tool in gh bun uv python node env shell; do
 done
 
 assert_contains "the shell block is in .zshrc" "# BEGIN aganitha" "$(cat "$h/.zshrc")"
-assert_contains "and it sources env.sh" ". \"$h/.aganitha/rig/env.sh\"" "$(cat "$h/.zshrc")"
+assert_contains "and it sources env.sh" ". \"$h/.aganitha/env.sh\"" "$(cat "$h/.zshrc")"
 assert_eq "exactly one block" "1" "$(count_matching '^# BEGIN aganitha$' "$h/.zshrc")"
 
-assert_file "gh landed in the rig tree" "$h/.aganitha/rig/bin/gh"
-assert_file "bun landed in the rig tree" "$h/.aganitha/rig/bun/bin/bun"
-assert_file "uv landed in the rig tree" "$h/.aganitha/rig/uv/uv"
-assert_file "node landed in the rig tree" "$h/.aganitha/rig/node/bin/node"
+assert_file "gh landed in the rig tree" "$h/.aganitha/toolchain/bin/gh"
+assert_file "bun landed in the rig tree" "$h/.aganitha/toolchain/bun/bin/bun"
+assert_file "uv landed in the rig tree" "$h/.aganitha/toolchain/uv/uv"
+assert_file "node landed in the rig tree" "$h/.aganitha/toolchain/node/bin/node"
 
 # ─── env.sh runs on every shell start ───────────────────────────────────────
 
@@ -261,7 +261,7 @@ env_body=$(cat "$(ENVFILE_OF "$h")")
 assert_not_contains "no command substitution" '$(' "$env_body"
 assert_not_contains "no backticks"            '`' "$env_body"
 assert_contains "it exports PATH" "export PATH" "$env_body"
-assert_contains "the rig bin directory is on it" "$h/.aganitha/rig/bin" "$env_body"
+assert_contains "the rig bin directory is on it" "$h/.aganitha/toolchain/bin" "$env_body"
 assert_contains "and the commands directory is picked up when it appears" \
   '$AGANITHA_HOME/commands/bin' "$env_body"
 
@@ -333,7 +333,7 @@ assert_eq "the run succeeds" "0" "$RIG_CODE"
 assert_contains "rig says it found one already" "already on this machine" "$(cat "$RIG_LOG")"
 assert_eq "the person's bun is not recorded" "0" \
   "$(count_matching '^bun	' "$(MANIFEST_OF "$h")")"
-assert_no_file "and nothing was installed over it" "$h/.aganitha/rig/bun/bin/bun"
+assert_no_file "and nothing was installed over it" "$h/.aganitha/toolchain/bun/bin/bun"
 assert_eq "the tools rig did install are still recorded" "1" \
   "$(count_matching '^node	' "$(MANIFEST_OF "$h")")"
 
@@ -391,7 +391,7 @@ run_uninstall --yes
 assert_eq "uninstall succeeds" "0" "$UN_CODE"
 assert_no_file "the manifest is gone" "$(MANIFEST_OF "$h")"
 assert_no_file "env.sh is gone" "$(ENVFILE_OF "$h")"
-if [ -d "$h/.aganitha/rig" ]; then fail "the rig tree is gone"; else pass "the rig tree is gone"; fi
+if [ -d "$h/.aganitha/toolchain" ]; then fail "the rig tree is gone"; else pass "the rig tree is gone"; fi
 assert_file "an unrecorded file elsewhere is untouched" "$h/mine/bin/keepme"
 assert_file "and somebody's own files under ~/.aganitha stay" "$h/.aganitha/notes/n"
 assert_contains "it says what it removed" "removed" "$(cat "$UN_LOG")"

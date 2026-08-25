@@ -30,5 +30,5 @@ grep -q 'apt-get install -y.*unzip' "$out" \
   || fail "the offered apt-get command does not include unzip"
 good "the refusal offers an apt-get install command that fixes it"
 
-if [ -e "$RIG_HOME" ]; then fail "a refused run still created $RIG_HOME"; fi
+if [ -e "$TOOLCHAIN" ]; then fail "a refused run still created $TOOLCHAIN"; fi
 good "nothing was installed"

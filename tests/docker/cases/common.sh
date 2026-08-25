@@ -10,9 +10,9 @@
 WORK="$HOME/work"
 RIG="$WORK/rig.sh"
 UNINSTALL="$WORK/uninstall-rig.sh"
-RIG_HOME="$HOME/.aganitha/rig"
-MANIFEST="$RIG_HOME/manifest"
-ENV_FILE="$RIG_HOME/env.sh"
+TOOLCHAIN="$HOME/.aganitha/toolchain"
+MANIFEST="$TOOLCHAIN/manifest"
+ENV_FILE="$TOOLCHAIN/env.sh"
 RC="$HOME/.bashrc"
 TAB=$(printf '\t')
 

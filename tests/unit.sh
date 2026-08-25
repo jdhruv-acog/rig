@@ -101,14 +101,14 @@ assert_contains "and the line between them survives" "keep me" "$(cat "$rc")"
 suite "record"
 
 d=$(case_dir)
-RIG_HOME="$d/rig"; MANIFEST="$RIG_HOME/manifest"
+TOOLCHAIN="$d/rig"; MANIFEST="$TOOLCHAIN/manifest"
 
-record bun 1.4.0 "$RIG_HOME/bun"
+record bun 1.4.0 "$TOOLCHAIN/bun"
 assert_file "creates the manifest" "$MANIFEST"
 assert_eq "with a schema line first" "schema	1" "$(head -1 "$MANIFEST")"
 
-record uv 0.12.5 "$RIG_HOME/uv"
-record bun 1.4.0 "$RIG_HOME/bun"
+record uv 0.12.5 "$TOOLCHAIN/uv"
+record bun 1.4.0 "$TOOLCHAIN/bun"
 assert_eq "upserts by name — no duplicate line" "1" "$(count_matching '^bun	' "$MANIFEST")"
 assert_eq "and the other entry is untouched" "1" "$(count_matching '^uv	' "$MANIFEST")"
 
@@ -118,10 +118,10 @@ assert_eq "and the other entry is untouched" "1" "$(count_matching '^uv	' "$MANI
 sed 's/^bun	1.4.0	\(.*\)	.*$/bun	1.4.0	\1	1999-01-01T00:00:00Z/' "$MANIFEST" > "$MANIFEST.t"
 mv "$MANIFEST.t" "$MANIFEST"
 before=$(cat "$MANIFEST")
-record bun 1.4.0 "$RIG_HOME/bun"
+record bun 1.4.0 "$TOOLCHAIN/bun"
 assert_eq "an unchanged entry keeps its timestamp" "$before" "$(cat "$MANIFEST")"
 
-record bun 1.5.0 "$RIG_HOME/bun"
+record bun 1.5.0 "$TOOLCHAIN/bun"
 assert_contains "a new version is recorded" "1.5.0" "$(grep '^bun	' "$MANIFEST")"
 assert_not_contains "and the old timestamp goes with it" "1999-01-01" "$(grep '^bun	' "$MANIFEST")"
 assert_eq "still one bun line" "1" "$(count_matching '^bun	' "$MANIFEST")"

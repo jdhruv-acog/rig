@@ -38,8 +38,8 @@ good "$RC still holds exactly one managed block"
 printf '\n  -- uninstall --\n'
 sh "$UNINSTALL" --yes
 
-if [ -e "$RIG_HOME" ]; then fail "$RIG_HOME survived the uninstall"; fi
-good "$RIG_HOME is gone"
+if [ -e "$TOOLCHAIN" ]; then fail "$TOOLCHAIN survived the uninstall"; fi
+good "$TOOLCHAIN is gone"
 
 if grep -q '^# BEGIN aganitha$' "$RC" 2>/dev/null; then
   fail "the managed block survived the uninstall in $RC"

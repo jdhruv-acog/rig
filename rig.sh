@@ -62,11 +62,11 @@ checksum_for() {
 # One tree. Nothing in ~/.local — that directory belongs to the person, and a
 # tool that scatters into it cannot tell its own files from theirs at removal.
 AGANITHA_HOME="${AGANITHA_HOME:-$HOME/.aganitha}"
-RIG_HOME="$AGANITHA_HOME/rig"
+TOOLCHAIN="$AGANITHA_HOME/toolchain"
 COMMANDS_HOME="$AGANITHA_HOME/commands"
-MANIFEST="$RIG_HOME/manifest"
-ENV_FILE="$RIG_HOME/env.sh"
-BIN_DIR="$RIG_HOME/bin"
+MANIFEST="$TOOLCHAIN/manifest"
+ENV_FILE="$AGANITHA_HOME/env.sh"
+BIN_DIR="$TOOLCHAIN/bin"
 
 COMMANDS_REPO="${RIG_COMMANDS_REPO:-aganitha/commands}"
 
@@ -156,7 +156,7 @@ confirm() {
 record() {
   local name version where tmp existing
   name="$1"; version="${2:--}"; where="${3:--}"
-  mkdir -p "$RIG_HOME"
+  mkdir -p "$TOOLCHAIN"
   [ -f "$MANIFEST" ] || printf 'schema\t1\n' > "$MANIFEST"
 
   # An unchanged entry is left exactly as it is, timestamp included. The time in
@@ -634,8 +634,8 @@ fetch_atk() {
 # varies by version, and a guessed path becomes a PATH entry pointing at nothing.
 
 ensure_bun() {
-  if [ -x "$RIG_HOME/bun/bin/bun" ]; then
-    BUN_BIN="$RIG_HOME/bun/bin"
+  if [ -x "$TOOLCHAIN/bun/bin/bun" ]; then
+    BUN_BIN="$TOOLCHAIN/bun/bin"
     PATH="$BUN_BIN:$PATH"; export PATH
     ok "bun" "$(bun --version)"
     resolve_bun_global
@@ -651,15 +651,15 @@ ensure_bun() {
   fi
 
   say "Installing bun."
-  BUN_INSTALL="$RIG_HOME/bun" SHELL=/bin/false \
+  BUN_INSTALL="$TOOLCHAIN/bun" SHELL=/bin/false \
     sh -c "curl -fsSL https://bun.sh/install | bash -s 'bun-v$BUN_VERSION'" \
     >/dev/null 2>&1 || true
-  [ -x "$RIG_HOME/bun/bin/bun" ] || die 1 "bun" "bun did not install" \
+  [ -x "$TOOLCHAIN/bun/bin/bun" ] || die 1 "bun" "bun did not install" \
     "Run this to see why:" "  curl -fsSL https://bun.sh/install | bash"
 
-  BUN_BIN="$RIG_HOME/bun/bin"
+  BUN_BIN="$TOOLCHAIN/bun/bin"
   PATH="$BUN_BIN:$PATH"; export PATH
-  record bun "$BUN_VERSION" "$RIG_HOME/bun"
+  record bun "$BUN_VERSION" "$TOOLCHAIN/bun"
   ok "bun" "$(bun --version), installed"
   resolve_bun_global
 }
@@ -668,14 +668,20 @@ ensure_bun() {
 # differs between versions, so a hardcoded path is one bun stops using — and the
 # install still succeeds while everything that looks for the command fails.
 resolve_bun_global() {
+  # Where bun puts globally installed commands. Asked, and then believed.
+  #
+  # bun decides this itself and does not take direction: BUN_INSTALL says where
+  # bun lives, and pointing it here makes the question fail outright;
+  # BUN_INSTALL_BIN changes the answer without changing where `bun add -g`
+  # actually writes, which is worse than not setting it.
   BUN_GLOBAL_BIN=$(bun pm bin -g 2>/dev/null || true)
-  [ -n "$BUN_GLOBAL_BIN" ] || BUN_GLOBAL_BIN="$RIG_HOME/bun/bin"
+  [ -n "$BUN_GLOBAL_BIN" ] || BUN_GLOBAL_BIN="$HOME/.bun/bin"
 }
 
 ensure_uv() {
   local found
-  if [ -x "$RIG_HOME/uv/uv" ]; then
-    UV_BIN="$RIG_HOME/uv"
+  if [ -x "$TOOLCHAIN/uv/uv" ]; then
+    UV_BIN="$TOOLCHAIN/uv"
     PATH="$UV_BIN:$PATH"; export PATH
     ok "uv" "$(uv --version 2>/dev/null | awk '{print $2}')"
     return 0
@@ -687,23 +693,23 @@ ensure_uv() {
   fi
 
   say "Installing uv."
-  UV_INSTALL_DIR="$RIG_HOME/uv" UV_NO_MODIFY_PATH=1 \
+  UV_INSTALL_DIR="$TOOLCHAIN/uv" UV_NO_MODIFY_PATH=1 \
     sh -c "curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh" \
     >/dev/null 2>&1 || true
   # The installer's layout has moved between releases, so the binary is found
   # rather than assumed.
-  found=$(find "$RIG_HOME/uv" -maxdepth 2 -type f -name uv -perm -u+x 2>/dev/null | head -1)
+  found=$(find "$TOOLCHAIN/uv" -maxdepth 2 -type f -name uv -perm -u+x 2>/dev/null | head -1)
   [ -n "$found" ] || die 1 "uv" "uv did not install" \
     "Run this to see why:" "  curl -LsSf https://astral.sh/uv/install.sh | sh"
 
   UV_BIN=$(dirname "$found")
   PATH="$UV_BIN:$PATH"; export PATH
-  record uv "$UV_VERSION" "$RIG_HOME/uv"
+  record uv "$UV_VERSION" "$TOOLCHAIN/uv"
   ok "uv" "$(uv --version 2>/dev/null | awk '{print $2}'), installed"
 }
 
 ensure_python() {
-  UV_PYTHON_INSTALL_DIR="$RIG_HOME/python"; export UV_PYTHON_INSTALL_DIR
+  UV_PYTHON_INSTALL_DIR="$TOOLCHAIN/python"; export UV_PYTHON_INSTALL_DIR
   # The shims land in our own bin directory, which is already on PATH. They point
   # at the unversioned interpreter directory, so a patch release keeps them valid.
   UV_PYTHON_BIN_DIR="$BIN_DIR"; export UV_PYTHON_BIN_DIR
@@ -724,7 +730,7 @@ ensure_python() {
     die 1 "python" "Python $PYTHON_VERSION did not install" \
       "Run this to see why:" "  uv python install $PYTHON_VERSION --default"
   fi
-  record python "$PYTHON_VERSION" "$RIG_HOME/python"
+  record python "$PYTHON_VERSION" "$TOOLCHAIN/python"
   ok "python" "$("$BIN_DIR/python3" --version 2>&1 | awk '{print $2}'), installed"
 }
 
@@ -740,7 +746,7 @@ ensure_python() {
 # of those failure modes. See docs/why-not.md.
 ensure_node() {
   local target plat asset tmp
-  target="$RIG_HOME/node"
+  target="$TOOLCHAIN/node"
   if [ -x "$target/bin/node" ]; then
     NODE_BIN="$target/bin"
     PATH="$NODE_BIN:$PATH"; export PATH
@@ -789,14 +795,14 @@ ensure_node() {
 
 write_env() {
   local tmp seen dir changed prefix
-  mkdir -p "$RIG_HOME"
+  mkdir -p "$TOOLCHAIN"
   tmp="$ENV_FILE.new"
   {
     printf '# Generated by rig %s. Do not edit — rerun rig instead.\n' "$RIG_VERSION"
     printf 'export AGANITHA_HOME="%s"\n' "$AGANITHA_HOME"
-    printf 'export RIG_HOME="%s"\n' "$RIG_HOME"
-    [ -d "$RIG_HOME/bun" ]    && printf 'export BUN_INSTALL="%s"\n' "$RIG_HOME/bun"
-    [ -d "$RIG_HOME/python" ] && printf 'export UV_PYTHON_INSTALL_DIR="%s"\n' "$RIG_HOME/python"
+    printf 'export TOOLCHAIN="%s"\n' "$TOOLCHAIN"
+    [ -d "$TOOLCHAIN/bun" ]    && printf 'export BUN_INSTALL="%s"\n' "$TOOLCHAIN/bun"
+    [ -d "$TOOLCHAIN/python" ] && printf 'export UV_PYTHON_INSTALL_DIR="%s"\n' "$TOOLCHAIN/python"
 
     # One PATH line, built in priority order: the first directory listed is the
     # first searched. Writing a line per directory would invert that, because

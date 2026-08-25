@@ -15,8 +15,8 @@
 set -eu
 
 AGANITHA_HOME="${AGANITHA_HOME:-$HOME/.aganitha}"
-RIG_HOME="$AGANITHA_HOME/rig"
-MANIFEST="$RIG_HOME/manifest"
+TOOLCHAIN="$AGANITHA_HOME/toolchain"
+MANIFEST="$TOOLCHAIN/manifest"
 PACKS_RECORD="$AGANITHA_HOME/.packs_installed"
 
 BLOCK_BEGIN="# BEGIN aganitha"
@@ -197,7 +197,7 @@ main() {
     [ "$name" = schema ] && continue
     case "$name" in
       shell|shell-profile) strip_block "$where"; ok "$name" "block removed from $(basename "$where")" ;;
-      env)                 : ;;   # inside RIG_HOME, removed with the tree below
+      env)                 rm -f "$where"; ok "env" "removed" ;;
       *)
         if [ -e "$where" ]; then rm -rf "$where"; ok "$name" "removed"
         else note "$name" "already gone"; fi ;;
@@ -206,8 +206,8 @@ main() {
   done < "$MANIFEST"
 
   # Last, so a failure above leaves the record intact and this can be run again.
-  rm -rf "$RIG_HOME"
-  ok "rig" "$RIG_HOME removed"
+  rm -rf "$TOOLCHAIN"
+  ok "rig" "$TOOLCHAIN removed"
 
   # Only when nothing else lives there. Somebody's own files under ~/.aganitha
   # are not ours to delete.
