@@ -75,6 +75,7 @@ COMMANDS_REPO="${RIG_COMMANDS_REPO:-aganitha/commands}"
 # and a path guessed here becomes a PATH entry that points at nothing.
 BUN_BIN=""
 BUN_GLOBAL_BIN=""
+GH_BIN=""
 UV_BIN=""
 NODE_BIN=""
 
@@ -507,6 +508,10 @@ gh_works() {
 ensure_gh() {
   local asset tmp found
   if gh_works; then
+    # Where it actually is, so a gh that came from somewhere else still reaches
+    # PATH in the next shell. Without this it works during the run and is gone
+    # the moment the person opens a terminal.
+    GH_BIN=$(dirname "$GH")
     ok "gh" "$("$GH" --version 2>/dev/null | head -1 | awk '{print $3}')"
     return 0
   fi
@@ -535,8 +540,9 @@ ensure_gh() {
   mv "$BIN_DIR/gh.partial" "$BIN_DIR/gh"
 
   gh_works || die 1 "gh" "gh was installed but will not run"
+  GH_BIN=$(dirname "$GH")
   record gh "$GH_VERSION" "$BIN_DIR/gh"
-  ok "gh" "$GH_VERSION installed"
+  ok "gh" "$GH_VERSION, installed"
 }
 
 gh_authenticated() { "$GH" auth status >/dev/null 2>&1; }
@@ -719,7 +725,7 @@ ensure_python() {
       "Run this to see why:" "  uv python install $PYTHON_VERSION --default"
   fi
   record python "$PYTHON_VERSION" "$RIG_HOME/python"
-  ok "python" "$("$BIN_DIR/python3" --version 2>&1 | awk '{print $2}')  installed"
+  ok "python" "$("$BIN_DIR/python3" --version 2>&1 | awk '{print $2}'), installed"
 }
 
 # Node is here for one reason: tools published to npm carry a
@@ -769,7 +775,7 @@ ensure_node() {
   PATH="$NODE_BIN:$PATH"; export PATH
   node --version >/dev/null 2>&1 || die 1 "node" "node was installed but will not run"
   record node "$NODE_VERSION" "$target"
-  ok "node" "v${NODE_VERSION} installed"
+  ok "node" "v${NODE_VERSION}, installed"
 }
 
 # ─── the one PATH truth ─────────────────────────────────────────────────────
@@ -799,7 +805,7 @@ write_env() {
     # Deduplicated, so a directory that serves two purposes — bun's own bin is
     # usually also where it puts global commands — appears once.
     prefix=""; seen=""
-    for dir in "$BUN_GLOBAL_BIN" "$BIN_DIR" "$NODE_BIN" "$BUN_BIN" "$UV_BIN"; do
+    for dir in "$BUN_GLOBAL_BIN" "$BIN_DIR" "$NODE_BIN" "$BUN_BIN" "$UV_BIN" "$GH_BIN"; do
       [ -n "$dir" ] || continue
       case ":$seen:" in *":$dir:"*) continue ;; esac
       seen="$seen:$dir"
