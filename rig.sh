@@ -611,27 +611,31 @@ fetch_atk() {
 ensure_bun() {
   if [ -x "$RIG_HOME/bun/bin/bun" ]; then
     BUN_BIN="$RIG_HOME/bun/bin"
-  elif command -v bun >/dev/null 2>&1; then
-    # Somebody's own bun. Used, and deliberately not recorded, so removal leaves it.
+    PATH="$BUN_BIN:$PATH"; export PATH
+    ok "bun" "$(bun --version)"
+    resolve_bun_global
+    return 0
+  fi
+  if command -v bun >/dev/null 2>&1; then
+    # Somebody's own bun. Used, and deliberately not recorded, so removal
+    # leaves it exactly where it was.
     BUN_BIN=$(dirname "$(command -v bun)")
-    ok "bun" "$(bun --version) (already on this machine)"
+    ok "bun" "$(bun --version), already on this machine"
     resolve_bun_global
     return 0
   fi
 
-  if [ -z "$BUN_BIN" ]; then
-    say "Installing bun."
-    BUN_INSTALL="$RIG_HOME/bun" SHELL=/bin/false \
-      sh -c "curl -fsSL https://bun.sh/install | bash -s 'bun-v$BUN_VERSION'" \
-      >/dev/null 2>&1 || true
-    [ -x "$RIG_HOME/bun/bin/bun" ] || die 1 "bun" "bun did not install" \
-      "Run this to see why:" "  curl -fsSL https://bun.sh/install | bash"
-    BUN_BIN="$RIG_HOME/bun/bin"
-    record bun "$BUN_VERSION" "$RIG_HOME/bun"
-  fi
+  say "Installing bun."
+  BUN_INSTALL="$RIG_HOME/bun" SHELL=/bin/false \
+    sh -c "curl -fsSL https://bun.sh/install | bash -s 'bun-v$BUN_VERSION'" \
+    >/dev/null 2>&1 || true
+  [ -x "$RIG_HOME/bun/bin/bun" ] || die 1 "bun" "bun did not install" \
+    "Run this to see why:" "  curl -fsSL https://bun.sh/install | bash"
 
+  BUN_BIN="$RIG_HOME/bun/bin"
   PATH="$BUN_BIN:$PATH"; export PATH
-  ok "bun" "$(bun --version)  installed"
+  record bun "$BUN_VERSION" "$RIG_HOME/bun"
+  ok "bun" "$(bun --version), installed"
   resolve_bun_global
 }
 
@@ -647,27 +651,30 @@ ensure_uv() {
   local found
   if [ -x "$RIG_HOME/uv/uv" ]; then
     UV_BIN="$RIG_HOME/uv"
-  elif command -v uv >/dev/null 2>&1; then
+    PATH="$UV_BIN:$PATH"; export PATH
+    ok "uv" "$(uv --version 2>/dev/null | awk '{print $2}')"
+    return 0
+  fi
+  if command -v uv >/dev/null 2>&1; then
     UV_BIN=$(dirname "$(command -v uv)")
-    ok "uv" "$(uv --version | awk '{print $2}') (already on this machine)"
+    ok "uv" "$(uv --version | awk '{print $2}'), already on this machine"
     return 0
   fi
 
-  if [ -z "$UV_BIN" ]; then
-    say "Installing uv."
-    UV_INSTALL_DIR="$RIG_HOME/uv" UV_NO_MODIFY_PATH=1 \
-      sh -c "curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh" \
-      >/dev/null 2>&1 || true
-    # The installer's layout has moved between releases, so find the binary.
-    found=$(find "$RIG_HOME/uv" -maxdepth 2 -type f -name uv -perm -u+x 2>/dev/null | head -1)
-    [ -n "$found" ] || die 1 "uv" "uv did not install" \
-      "Run this to see why:" "  curl -LsSf https://astral.sh/uv/install.sh | sh"
-    UV_BIN=$(dirname "$found")
-    record uv "$UV_VERSION" "$RIG_HOME/uv"
-  fi
+  say "Installing uv."
+  UV_INSTALL_DIR="$RIG_HOME/uv" UV_NO_MODIFY_PATH=1 \
+    sh -c "curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh" \
+    >/dev/null 2>&1 || true
+  # The installer's layout has moved between releases, so the binary is found
+  # rather than assumed.
+  found=$(find "$RIG_HOME/uv" -maxdepth 2 -type f -name uv -perm -u+x 2>/dev/null | head -1)
+  [ -n "$found" ] || die 1 "uv" "uv did not install" \
+    "Run this to see why:" "  curl -LsSf https://astral.sh/uv/install.sh | sh"
 
+  UV_BIN=$(dirname "$found")
   PATH="$UV_BIN:$PATH"; export PATH
-  ok "uv" "$(uv --version 2>/dev/null | awk '{print $2}')  installed"
+  record uv "$UV_VERSION" "$RIG_HOME/uv"
+  ok "uv" "$(uv --version 2>/dev/null | awk '{print $2}'), installed"
 }
 
 ensure_python() {

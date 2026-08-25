@@ -64,7 +64,10 @@ jobs:
           # The interpreter must be rig's, never /usr/bin/python3 — which is a
           # developer-tools stub, not a Python.
           python3 --version | grep -q '3\.14' || { echo "python3 is not rig's"; exit 1; }
-          test ! -d "$HOME/.local" || { echo "wrote into ~/.local"; exit 1; }
+          # rig installs nothing into ~/.local. gh keeps its own state under
+          # ~/.local/state, which is that tool's business and the XDG default,
+          # so the assertion is about installed binaries, not the directory.
+          test ! -d "$HOME/.local/bin" || { echo "installed into ~/.local/bin"; exit 1; }
       - name: A second run must change nothing
         run: |
           export HOME="$(mktemp -d)"
